@@ -8,11 +8,15 @@ c = constant.c.cgs.value
 
 
 def v_to_lam(v):
+    #Input frequency v in Hz.
+    #Return Wavelength in cm.
+    
     return (c / v)
 
 
 def find_tau_v(v, Mi=-23, M_BH=1e9 * M_sun):
-    # v in Hz, Black whole mass in g
+    #Input frequency v in Hz, i band magnitude (default is -23), Black whole mass in g (defalt is 10^9 solar mass).
+    #Return timescale in s.
 
     A = 2.4
     B = 0.17
@@ -24,6 +28,9 @@ def find_tau_v(v, Mi=-23, M_BH=1e9 * M_sun):
 
 
 def find_sf_inf(v, Mi=-23, M_BH=1e9 * M_sun):
+    # Input frequency in Hz, i band magnitude (default is -23), Black whole mass in g (defalt is 10^9 solar mass).
+    # Return Structure Function at infinity.
+    
     A = -0.51
     B = -0.479
     C = 0.13
@@ -34,6 +41,11 @@ def find_sf_inf(v, Mi=-23, M_BH=1e9 * M_sun):
 
 
 def drw(x_0, t, v, Mi=-23, M_BH=1e9 * M_sun, rng=None):
+    # Input time moment as an array, discrete frequencies in array, i band magnitude (default is -23), 
+    #black whole mass in g (defalt is 10^9 solar mass), random seed rng (default is None). 
+    # Return 2D array x for Damped Random Walk at given time moments and frequencies. x[:,1] varies with frequency
+    #x[1,:] varies with time.
+    
     dt = np.diff(t)
     rng = np.random.default_rng(rng)
     r = rng.normal(size=t.size)
