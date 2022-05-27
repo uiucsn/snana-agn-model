@@ -61,10 +61,14 @@ def drw(x_0, t, v, Mi=-23, M_BH=1e9 * M_sun, rng=None):
 
 
 def baseline(v):
+    # Input frequency as array.
+    # Return baseline (average value).
     return v**(1/3)
 
 
 def mag_to_flux(mag, base):
+    # Input magnitude and baseline (average value).
+    # Return flux
     return base * 10**(-0.4*mag)
 
 
