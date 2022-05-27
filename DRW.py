@@ -40,7 +40,17 @@ def find_sf_inf(v, Mi=-23, M_BH=1e9 * M_sun):
                   + C * (Mi + 23) + D * np.log10(M_BH / (1e9 * M_sun)))
 
 
-def drw(x_0, t, v, Mi=-23, M_BH=1e9 * M_sun, rng=None):
+def prep_drw(v,  Mi=-23, M_BH=1e9 * M_sun):
+    # Input frequency series, i band magnitude (default is -23),black whole mass in g (defalt is 10^9 solar mass).
+    # Return Structure Function(infinity) array, and time scale array.
+    
+    sf_inf = find_sf_inf(v, Mi, M_BH)
+    tau = find_tau_v(v, Mi, M_BH)
+    
+    return sf_inf, tau
+
+
+def drw(t, v, Mi=-23, M_BH=1e9 * M_sun, rng=None):
     # Input time moment as an array, discrete frequencies in array, i band magnitude (default is -23), 
     #black whole mass in g (defalt is 10^9 solar mass), random seed rng (default is None). 
     # Return 2D array x for Damped Random Walk at given time moments and frequencies. x[:,1] varies with frequency
@@ -50,8 +60,7 @@ def drw(x_0, t, v, Mi=-23, M_BH=1e9 * M_sun, rng=None):
     rng = np.random.default_rng(rng)
     r = rng.normal(size=t.size)
     x = np.zeros((t.size, v.size))
-    sf_inf = find_sf_inf(v, Mi, M_BH)
-    tau = find_tau_v(v, Mi, M_BH)
+
     x[0] = r[0] * sf_inf
 
     for i in range(1, np.size(t)):
@@ -86,7 +95,8 @@ def main():
     rng = np.random.default_rng(start_index)
 
     # %timeit walks = drw(x_0=1, t=t_test, v = v, rng=rng)
-    walks = drw(x_0=1, t=t_test, v=v, Mi=-23, M_BH=1e9 * M_sun, rng=rng)
+    sf_inf, tau = prep_drw(v,Mi=-23, M_BH=1e9*M_sun)
+    walks = drw(x_0=1, t=t_test, v=v, sf_inf=sf_inf, tau=tau, rng=rng)
 
     # Show DRW
     plt.plot(t_test, walks[:, 0], label='frequency 1')
@@ -114,7 +124,8 @@ def main():
     walks_M_BH = []
     rng = 0
     for i in range(20):
-        walks_M_BH.append(drw(x_0=1, t=t_test, v=v, Mi=-23, M_BH=(i + 1) * 1e8 * M_sun, rng=rng))
+        sf_inf, tau = prep_drw(v,  Mi=-23, M_BH=(i+1) * 1e8*M_sun)
+        walks_M_BH.append(drw(t=t_test, v = v, sf_inf=sf_inf, tau=tau, rng=rng))
 
     for i in range(0, 20, 5):
         plt.plot(t_test, walks_M_BH[i][:, 0], label=f'{(i + 1)} 1e8 * solar mass')
@@ -126,7 +137,8 @@ def main():
     walks_Mi = []
     rng = 0
     for i in range(-10, 10):
-        walks_Mi.append(drw(x_0=1, t=t_test, v=v, Mi=-23 + 0.5 * i, M_BH=1e9 * M_sun, rng=rng))
+        sf_inf, tau = prep_drw(v,  Mi=-23 + 0.5*i)
+        walks_Mi.append(drw(t=t_test, v = v,sf_inf=sf_inf, tau=tau, rng=rng))
 
     for i in range(0, 20, 5):
         plt.plot(lam * 1e8, walks_Mi[i][0, :], label=f'Mi = {-23 + 0.5 * i}')
