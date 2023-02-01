@@ -15,32 +15,28 @@ h = constants.h.cgs.value
 k_B = constants.k_B.cgs.value
 
 
-class Spline:
-    def __init__(self, x, y, sampling_size=1, rng=None):
-        self.x = x
-        self.y = y
+
+class DistributionSampler:
+    def __init__(self, x, y, rng=None):
         self.rng = np.random.default_rng(rng)
 
-        self.inv_cdf_func = self.inv_cdf()
-        self.inv_samples = self.inv_trans_sampling(sampling_size=sampling_size)
+        self.inv_cdf_spline = self.inv_cdf(x, y)
 
-    def inv_cdf(self):
+    @staticmethod
+    def inv_cdf(x, y):
         # y(x); y is the CDF of x
         # return inv_cdf function
-        x = self.x
-        y = self.y
         pdf_spline = UnivariateSpline(x=x, y=y, s=0, k=3)
         cdf_spline = pdf_spline.antiderivative()
         assert cdf_spline(x[0]) == 0
         norm = cdf_spline(x[-1])
         inv_cdf_spline = UnivariateSpline(x=cdf_spline(x) / norm, y=x, s=0, k=3)
-
         return inv_cdf_spline
 
     def inv_trans_sampling(self, sampling_size=1):
         # input inverse cdf function.
         r = self.rng.random(int(sampling_size))
-        return self.inv_cdf_func(r)
+        return self.inv_cdf_spline(r)
 
 
 class AGN:
@@ -232,8 +228,8 @@ class gensed_BAYESN:
         if new_event:
             lambda_ = np.logspace(self.log_lambda_min, self.log_lambda_max, self.nbins + 1)
             xi_blue = self.ERDF(lambda_Edd=lambda_, rng=self.rng)
-            ERDF_spline = Spline(lambda_, xi_blue, sampling_size=1, rng=self.rng)
-            self.edd_ratio = ERDF_spline.inv_samples
+            ERDF_spline = DistributionSampler(lambda_, xi_blue, rng=self.rng)
+            self.edd_ratio = ERDF_spline.inv_trans_sampling(sampling_size=1)
 
             self.agn = AGN(t0=trest, Mi=-23, M_BH=1e9 * M_sun, lam=self.wave, edd_ratio=self.edd_ratio, rng=self.rng)
 
