@@ -1,10 +1,13 @@
-# test of the class by adding ERDF
+# test of the class by adding MBH
 
 import numpy as np
 from astropy import constants, units
 from astropy.cosmology import Planck18
 from scipy import integrate
 from scipy.interpolate import UnivariateSpline
+import matplotlib.pyplot as plt
+
+from gensed_base import gensed_base
 
 M_sun = constants.M_sun.cgs.value
 c = constants.c.cgs.value
@@ -13,7 +16,6 @@ G = constants.G.cgs.value
 sigma_sb = constants.sigma_sb.cgs.value
 h = constants.h.cgs.value
 k_B = constants.k_B.cgs.value
-
 
 
 class DistributionSampler:
@@ -31,6 +33,7 @@ class DistributionSampler:
         assert cdf_spline(x[0]) == 0
         norm = cdf_spline(x[-1])
         inv_cdf_spline = UnivariateSpline(x=cdf_spline(x) / norm, y=x, s=0, k=3)
+
         return inv_cdf_spline
 
     def inv_trans_sampling(self, sampling_size=1):
@@ -155,10 +158,15 @@ class AGN:
                       + C * (Mi + 23) + D * np.log10(M_BH / (1e9 * M_sun)))
 
 
-class gensed_BAYESN:
+class gensed_AGN(gensed_base):
+    # round input rest time by 10**_trest_digits days
+    _trest_digits = 8
+
     def __init__(self, PATH_VERSION, OPTMASK, ARGLIST, HOST_PARAM_NAMES):
         print('__init__', flush=True)
         self.agn = None
+        self.trest = None
+        self.sed = None
         print(1, flush=True)
         # self.host_param_names = [x.upper() for x in HOST_PARAM_NAMES.split(',')]
         # self.PATH_VERSION = os.path.expandvars(PATH_VERSION)
@@ -177,6 +185,12 @@ class gensed_BAYESN:
         self.log_lambda_min = -8.5
         self.log_lambda_max = 0.5
         self.nbins = 1000
+
+        self.M_BH = None
+        self.Mi = None
+
+    def _get_Flambda(self):
+        return self.agn.Fnu * c / self.wave ** 2 * 1e-8
 
     @staticmethod
     def ERDF(lambda_Edd, galaxy_type='Blue', rng=None):
@@ -208,6 +222,21 @@ class gensed_BAYESN:
 
         return xi * ((lambda_Edd / lambda_br) ** delta1 + (lambda_Edd / lambda_br) ** delta2) ** -1
 
+    @staticmethod
+    def M_BH_sample(rng):
+        logMH_min = 7
+        logMBH_max = 10
+        return 10 ** (rng.uniform(logMH_min, logMBH_max))
+
+    @staticmethod
+    def find_L_bol(edd_ratio, M_BH):
+        # Input: M_BH in units of M_sun.
+        return edd_ratio * 1.26e38 * M_BH
+
+    @staticmethod
+    def find_Mi(L_bol):
+        return 90 - 2.5 * np.log(L_bol)
+
     def fetchSED_NLAM(self):
         """
         Returns the length of the wavelength vector
@@ -215,38 +244,132 @@ class gensed_BAYESN:
         print('fetchSED_NLAM', flush=True)
         return self.wavelen
 
+
+
+    def prepEvent(self, trest, external_id, hostparams):
+
+        lambda_ = np.logspace(self.log_lambda_min, self.log_lambda_max, self.nbins + 1)
+        xi_blue = self.ERDF(lambda_Edd=lambda_, rng=self.rng)
+        ERDF_spline = DistributionSampler(lambda_, xi_blue, rng=self.rng)
+        self.edd_ratio = ERDF_spline.inv_trans_sampling(sampling_size=1)
+
+        self.M_BH = self.M_BH_sample(self.rng)
+        L_bol = self.find_L_bol(self.edd_ratio, self.M_BH)  # L_bol: in erg/s
+        self.Mi = self.find_Mi(L_bol)  # L_bol in erg/s
+
+        self.agn = AGN(t0=self.trest[0], Mi=self.Mi, M_BH=self.M_BH * M_sun, lam=self.wave, edd_ratio=self.edd_ratio,
+                       rng=self.rng)
+        # self.agn = AGN(t0=self.trest[0], Mi=-23, M_BH=1e9 * M_sun, lam=self.wave, edd_ratio=0.1, rng=self.rng)
+        print(f'hostparams:{hostparams}')
+
+        # trest is sorted
+        self.trest = np.round(trest, self._trest_digits)
+        self.sed = {self.trest[0]: self._get_Flambda()}
+        # TODO: consider a case of repeated t, we usually have several t = 0
+        for t in self.trest[1:]:
+            self.agn.step(t)
+            self.sed[t] = self._get_Flambda()
+
+    def test_AGN_flux(self, trest):
+        self.trest = np.round(trest, self._trest_digits)
+        self.agn = AGN(t0=self.trest[0], Mi=self.Mi, M_BH=self.M_BH * M_sun, lam=self.wave, edd_ratio=self.edd_ratio,
+                       rng=self.rng)
+
+        self.sed = {self.trest[0]: self._get_Flambda()}
+        # TODO: consider a case of repeated t, we usually have several t = 0
+        for t in self.trest[1:]:
+            self.agn.step(t)
+            self.sed[t] = self._get_Flambda()
+
+
     def fetchSED_LAM(self):
         """
         Returns the wavelength vector
         """
-        print('fetchSED_LAM', flush=True)
         wave_aa = self.wave * 1e8
-        return wave_aa.tolist()
+        # print('wave:',wave_aa)
+        return wave_aa
 
-    def fetchSED_BAYESN(self, trest, maxlam=5000, external_id=1, new_event=1, hostparams=''):
-        print('fetchSED_BAYESN', flush=True)
-        if new_event:
-            lambda_ = np.logspace(self.log_lambda_min, self.log_lambda_max, self.nbins + 1)
-            xi_blue = self.ERDF(lambda_Edd=lambda_, rng=self.rng)
-            ERDF_spline = DistributionSampler(lambda_, xi_blue, rng=self.rng)
-            self.edd_ratio = ERDF_spline.inv_trans_sampling(sampling_size=1)
+    def fetchSED(self, trest, maxlam, external_id, new_event, hostparams):
+        trest = round(trest, self._trest_digits)
+        return self.sed[trest]
 
-            self.agn = AGN(t0=trest, Mi=-23, M_BH=1e9 * M_sun, lam=self.wave, edd_ratio=self.edd_ratio, rng=self.rng)
-
-        else:
-            self.agn.step(trest)
-        print('fetchSED_BAYESN', flush=True)
-        Flambda = self.agn.Fnu * c / self.wave ** 2 * 1e-8
-        return Flambda.tolist()
-
-    def fetchParNames_BAYESN(self):
-        print('fetchParNames_BAYESN', flush=True)
+    def fetchParNames(self):
         return []
 
-    def fetchNParNames_BAYESN(self):
-        print('fetchNParNames_BAYESN', flush=True)
-        return 0
-
-    def fetchParVals_BAYESN_4SNANA(self, varname):
-        print('fetchParVals_BAYESN_4SNANA', flush=True)
+    def fetchParVals(self, varname):
         return 'SNANA'
+
+def main():
+    mySED = gensed_AGN('$SNDATA_ROOT/models/bayesn/BAYESN.M20',2,[],'z,AGE,ZCMB,METALLICITY')
+
+    trest = np.arange(1, 10000, 10)
+    mySED.Mi = -23
+    mySED.M_BH = 1e9
+    mySED.rng = np.random.default_rng(0)
+    mySED.edd_ratio = 0.1
+    mySED.test_AGN_flux(trest)
+
+
+    fig = plt.figure(figsize=(10, 5))
+    ax1 = fig.add_subplot(111)
+
+    flux_firstWave = []
+    sed_list = - 2.5 * np.log(list(mySED.sed.values()))
+    for i in range(len(mySED.sed)):
+        flux_firstWave.append(sed_list[i][0])
+
+    #print(list(my(sed_list.sed.values())[0])
+
+    ax1.plot(trest, flux_firstWave, 'g-')
+    plt.show()
+    fig.savefig('test_mag_mag.png')
+
+    # def fetchSED_LAM(self):
+    #     """
+    #     Returns the wavelength vector
+    #     """
+    #     print('fetchSED_LAM', flush=True)
+    #     wave_aa = self.wave * 1e8
+    #     return wave_aa.tolist()
+
+    # def fetchSED_BAYESN(self, trest, maxlam=5000, external_id=1, new_event=1, hostparams=''):
+    #     print('fetchSED_BAYESN', flush=True)
+    #     if new_event:
+    #         lambda_ = np.logspace(self.log_lambda_min, self.log_lambda_max, self.nbins + 1)
+    #         xi_blue = self.ERDF(lambda_Edd=lambda_, rng=self.rng)
+    #         ERDF_spline = DistributionSampler(lambda_, xi_blue, rng=self.rng)
+    #         self.edd_ratio = ERDF_spline.inv_trans_sampling(sampling_size=1)
+    #
+    #         self.M_BH = self.M_BH_sample(self.rng)
+    #         L_bol = self.L_bol(self.edd_ratio, self.M_BH)  # L_bol: in erg/s
+    #         self.Mi = self.Mi(L_bol)  # L_bol in erg/s
+    #
+    #         # self.agn = AGN(t0=trest, Mi=-23, M_BH=1e9 * M_sun, lam=self.wave, edd_ratio=self.edd_ratio, rng=self.rng)
+    #         self.agn = AGN(t0=trest, Mi=self.Mi, M_BH=self.M_BH * M_sun, lam=self.wave, edd_ratio=self.edd_ratio, rng=self.rng)
+    #
+    #     else:
+    #         self.agn.step(trest)
+    #     print('fetchSED_BAYESN', flush=True)
+    #     Flambda = self.agn.Fnu * c / self.wave ** 2 * 1e-8
+    #     return Flambda.tolist()
+    #
+    # def fetchParNames_BAYESN(self):
+    #     print('fetchParNames_BAYESN', flush=True)
+    #     return []
+    #
+    # def fetchNParNames_BAYESN(self):
+    #     print('fetchNParNames_BAYESN', flush=True)
+    #     return 0
+    #
+    # def fetchParVals_BAYESN_4SNANA(self, varname):
+    #     print('fetchParVals_BAYESN_4SNANA', flush=True)
+    #     return 'SNANA'
+
+
+
+
+
+
+if __name__ == '__main__':
+    main()
