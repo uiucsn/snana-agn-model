@@ -167,6 +167,7 @@ class gensed_AGN(gensed_base):
         self.agn = None
         self.trest = None
         self.sed = None
+        self.sed_Fnu = None
         print(1, flush=True)
         # self.host_param_names = [x.upper() for x in HOST_PARAM_NAMES.split(',')]
         # self.PATH_VERSION = os.path.expandvars(PATH_VERSION)
@@ -225,17 +226,18 @@ class gensed_AGN(gensed_base):
     @staticmethod
     def M_BH_sample(rng):
         logMH_min = 7
-        logMBH_max = 10
+        logMBH_max = 9
         return 10 ** (rng.uniform(logMH_min, logMBH_max))
 
     @staticmethod
     def find_L_bol(edd_ratio, M_BH):
-        # Input: M_BH in units of M_sun.
+        # Input: M_BH in unit of M_sun.
+        # Return L_bol in erg/s
         return edd_ratio * 1.26e38 * M_BH
 
     @staticmethod
     def find_Mi(L_bol):
-        return 90 - 2.5 * np.log(L_bol)
+        return 90 - 2.5 * np.log10(L_bol)
 
     def fetchSED_NLAM(self):
         """
@@ -247,23 +249,28 @@ class gensed_AGN(gensed_base):
 
 
     def prepEvent(self, trest, external_id, hostparams):
+        # trest is sorted
+        self.trest = np.round(trest, self._trest_digits)
 
         lambda_ = np.logspace(self.log_lambda_min, self.log_lambda_max, self.nbins + 1)
         xi_blue = self.ERDF(lambda_Edd=lambda_, rng=self.rng)
         ERDF_spline = DistributionSampler(lambda_, xi_blue, rng=self.rng)
         self.edd_ratio = ERDF_spline.inv_trans_sampling(sampling_size=1)
 
-        self.M_BH = self.M_BH_sample(self.rng)
+        self.M_BH = self.M_BH_sample(self.rng)  # M_BH in unit of M_sun
         L_bol = self.find_L_bol(self.edd_ratio, self.M_BH)  # L_bol: in erg/s
         self.Mi = self.find_Mi(L_bol)  # L_bol in erg/s
 
+        print(f'M_BH:{self.M_BH}\n')
+        print(f'L_bol: {L_bol}\n')
+        print(f'Mi: {self.Mi}\n')
+        print(f'Edd_ratio:{self.edd_ratio}')
+
         self.agn = AGN(t0=self.trest[0], Mi=self.Mi, M_BH=self.M_BH * M_sun, lam=self.wave, edd_ratio=self.edd_ratio,
                        rng=self.rng)
+
         # self.agn = AGN(t0=self.trest[0], Mi=-23, M_BH=1e9 * M_sun, lam=self.wave, edd_ratio=0.1, rng=self.rng)
         print(f'hostparams:{hostparams}')
-
-        # trest is sorted
-        self.trest = np.round(trest, self._trest_digits)
         self.sed = {self.trest[0]: self._get_Flambda()}
         # TODO: consider a case of repeated t, we usually have several t = 0
         for t in self.trest[1:]:
@@ -276,10 +283,12 @@ class gensed_AGN(gensed_base):
                        rng=self.rng)
 
         self.sed = {self.trest[0]: self._get_Flambda()}
+        self.sed_Fnu = {self.trest[0]: self.agn.Fnu}
         # TODO: consider a case of repeated t, we usually have several t = 0
         for t in self.trest[1:]:
             self.agn.step(t)
             self.sed[t] = self._get_Flambda()
+            self.sed_Fnu[t] = self.agn.Fnu
 
 
     def fetchSED_LAM(self):
@@ -303,23 +312,23 @@ class gensed_AGN(gensed_base):
 def main():
     mySED = gensed_AGN('$SNDATA_ROOT/models/bayesn/BAYESN.M20',2,[],'z,AGE,ZCMB,METALLICITY')
 
-    trest = np.arange(1, 10000, 10)
+    trest = np.arange(1, 100, 0.1)
     mySED.Mi = -23
-    mySED.M_BH = 1e9
+    mySED.M_BH = 1e9 # in unit of M_sun
     mySED.rng = np.random.default_rng(0)
     mySED.edd_ratio = 0.1
     mySED.test_AGN_flux(trest)
-
 
     fig = plt.figure(figsize=(10, 5))
     ax1 = fig.add_subplot(111)
 
     flux_firstWave = []
-    sed_list = - 2.5 * np.log(list(mySED.sed.values()))
-    for i in range(len(mySED.sed)):
-        flux_firstWave.append(sed_list[i][0])
+    sed_list = - 2.5 * np.log10(list(mySED.sed_Fnu.values())) - 48.5
+    for i in range(len(mySED.sed_Fnu)):
+        flux_firstWave.append(sed_list[i][82])  #wave[82] = 8000 amstrong(i-band)
 
     #print(list(my(sed_list.sed.values())[0])
+
 
     ax1.plot(trest, flux_firstWave, 'g-')
     plt.show()
@@ -373,3 +382,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
+
+
