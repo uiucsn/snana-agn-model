@@ -19,17 +19,50 @@ k_B = constants.k_B.cgs.value
 
 class DistributionSampler:
     """
-    A class to build a sampler by inverse sampling
+    A class to build a sampler by inverse transformation sampling
+
+    ...
+
+    Attributes
+    ----------
+    None
+
+    Methods
+    -------
+    inv_cdf(x, y)
+        Returns inverse cdf function
+    inv_trans_sampling(self, sampling_size=1)
+        Returns random samples by inverse transformation sampling
     """
+
     def __init__(self, x, y, rng=None):
-        # input y and x, which y is CDF of x
+        """
+        Parameters
+        ----------
+        x : ndarray[float64]
+            The random variable
+        y : str
+            The probability density function of x
+        rng : random generator object, optional
+            The initialized generator object for inverse transform sampling
+        """
+
         self.rng = np.random.default_rng(rng)
         self.inv_cdf_spline = self.inv_cdf(x, y)
 
     @staticmethod
     def inv_cdf(x, y):
-        # y(x); y is the CDF of x
-        # return inverse cdf function
+        """
+        Return inverse cumulative distribution function
+
+        Parameters
+        ----------
+        x : ndarray[float64]
+            The random variable
+        y : str
+            The probability density function of x
+        """
+
         pdf_spline = UnivariateSpline(x=x, y=y, s=0, k=3)
         cdf_spline = pdf_spline.antiderivative()
         assert cdf_spline(x[0]) == 0
@@ -39,13 +72,46 @@ class DistributionSampler:
         return inv_cdf_spline
 
     def inv_trans_sampling(self, sampling_size=1):
-        # input: inverse cdf function.
-        # output: random samples
+        """
+        Return samples from inverse transformation sampling
+
+        Parameters
+        ----------
+        sampling_size : int
+            Desired sampling size
+        """
+
         r = self.rng.random(int(sampling_size))
         return self.inv_cdf_spline(r)
 
 
 class AGN:
+    """
+    A class for AGN object
+
+    ...
+
+    Attributes
+    ----------
+    lam: list
+        list of rest frame wavelength
+    t0: float
+        initial time moment
+    rng: random seed generator object
+        random seed
+    ME_dot: float
+        Accretion rate at Eddington luminosity
+    MBH_dot: float
+        Black hole accretion rate
+    Fnu_average: ndarray[float64]
+        Baseline for flux density Fnu
+    tau: ndarray
+        Timescale for damped random walk model at each wavelength
+    sf_inf:  ndarray
+        Structure Function (infinity) at each wavelength
+    t: float
+        current time moment for damped random walk model
+    """
     def __init__(self, t0: float, Mi: float, M_BH: float, lam: np.ndarray, edd_ratio: float, rng):
         self.lam = np.asarray(lam)
         self.t0 = t0
@@ -212,7 +278,7 @@ class AGN:
 
 class gensed_AGN(gensed_base):
     # round input rest time by 10**_trest_digits days
-    _trest_digits = 8
+    _trest_digits = 5
 
     def __init__(self, PATH_VERSION, OPTMASK, ARGLIST, HOST_PARAM_NAMES):
         print('__init__', flush=True)
@@ -312,14 +378,19 @@ class gensed_AGN(gensed_base):
         L_bol = self.find_L_bol(self.edd_ratio, self.M_BH)  # L_bol: in erg/s
         self.Mi = self.find_Mi(L_bol)  # L_bol in erg/s
 
+        '''
+        ### print test ###
         print(f'M_BH:{self.M_BH}\n')
         print(f'L_bol: {L_bol}\n')
         print(f'Mi: {self.Mi}\n')
         print(f'Edd_ratio:{self.edd_ratio}')
+        '''
+
 
         self.agn = AGN(t0=self.trest[0], Mi=self.Mi, M_BH=self.M_BH * M_sun, lam=self.wave, edd_ratio=self.edd_ratio,
                        rng=self.rng)
 
+        # default parameter testing
         # self.agn = AGN(t0=self.trest[0], Mi=-23, M_BH=1e9 * M_sun, lam=self.wave, edd_ratio=0.1, rng=self.rng)
         print(f'hostparams:{hostparams}')
         self.sed = {self.trest[0]: self._get_Flambda()}
@@ -380,6 +451,7 @@ def main():
     mySED.rng = np.random.default_rng(0)
     mySED.Mi = mySED.find_Mi(L_bol)
     """
+
     """
     #default test
     mySED.Mi = -23
@@ -405,57 +477,8 @@ def main():
     ax1.plot(trest*(1+0.805899978), flux_firstWave, 'g-')
     ax1.invert_yaxis()
     plt.show()
-    fig.savefig('test_apparentmag_2534406.png')
-
-    # def fetchSED_LAM(self):
-    #     """
-    #     Returns the wavelength vector
-    #     """
-    #     print('fetchSED_LAM', flush=True)
-    #     wave_aa = self.wave * 1e8
-    #     return wave_aa.tolist()
-
-    # def fetchSED_BAYESN(self, trest, maxlam=5000, external_id=1, new_event=1, hostparams=''):
-    #     print('fetchSED_BAYESN', flush=True)
-    #     if new_event:
-    #         lambda_ = np.logspace(self.log_lambda_min, self.log_lambda_max, self.nbins + 1)
-    #         xi_blue = self.ERDF(lambda_Edd=lambda_, rng=self.rng)
-    #         ERDF_spline = DistributionSampler(lambda_, xi_blue, rng=self.rng)
-    #         self.edd_ratio = ERDF_spline.inv_trans_sampling(sampling_size=1)
-    #
-    #         self.M_BH = self.M_BH_sample(self.rng)
-    #         L_bol = self.L_bol(self.edd_ratio, self.M_BH)  # L_bol: in erg/s
-    #         self.Mi = self.Mi(L_bol)  # L_bol in erg/s
-    #
-    #         # self.agn = AGN(t0=trest, Mi=-23, M_BH=1e9 * M_sun, lam=self.wave, edd_ratio=self.edd_ratio, rng=self.rng)
-    #         self.agn = AGN(t0=trest, Mi=self.Mi, M_BH=self.M_BH * M_sun, lam=self.wave, edd_ratio=self.edd_ratio, rng=self.rng)
-    #
-    #     else:
-    #         self.agn.step(trest)
-    #     print('fetchSED_BAYESN', flush=True)
-    #     Flambda = self.agn.Fnu * c / self.wave ** 2 * 1e-8
-    #     return Flambda.tolist()
-    #
-    # def fetchParNames_BAYESN(self):
-    #     print('fetchParNames_BAYESN', flush=True)
-    #     return []
-    #
-    # def fetchNParNames_BAYESN(self):
-    #     print('fetchNParNames_BAYESN', flush=True)
-    #     return 0
-    #
-    # def fetchParVals_BAYESN_4SNANA(self, varname):
-    #     print('fetchParVals_BAYESN_4SNANA', flush=True)
-    #     return 'SNANA'
-
-
-
-
-
+    fig.savefig('test_apparentmag_2534406_new.png')
 
 if __name__ == '__main__':
     main()
-
-
-
-
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        1,1           Top
