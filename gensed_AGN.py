@@ -26,6 +26,31 @@ h = constants.h.cgs.value
 k_B = constants.k_B.cgs.value
 
 
+def search_nearest(a, x):
+    """Find index of element of `a` closest to x
+    
+    Parameters
+    ----------
+    a : np.array
+        Sorted array
+    x : number
+        Value to loop up
+
+    Returns
+    -------
+    int
+        Valid index of a
+    """
+    idx = np.searchsorted(a, x)
+    if idx == 0:       # x < a[0]
+        return 0
+    if idx == a.size:  # x >= a[-1]
+        return a.size - 1
+    if x - a[idx - 1] < a[idx] - x:
+        return idx - 1
+    return idx
+
+
 class DistributionSampler:
     """
     A class to build a sampler by inverse transformation sampling
@@ -286,9 +311,6 @@ class AGN:
 
 
 class gensed_AGN(gensed_base):
-    # round input rest time by 10**_trest_digits days
-    _trest_digits = 5
-
     def __init__(self, PATH_VERSION, OPTMASK, ARGLIST, HOST_PARAM_NAMES):
         print('__init__', flush=True)
         self.agn = None
@@ -377,9 +399,7 @@ class gensed_AGN(gensed_base):
 
 
     def prepEvent(self, trest, external_id, hostparams):
-        # trest is sorted
-        self.trest = np.round(trest, self._trest_digits)
-
+        self.trest = np.unique(trest)
 
         self.edd_ratio = self.ERDF_spline.inv_trans_sampling(sampling_size=1)
 
@@ -402,14 +422,15 @@ class gensed_AGN(gensed_base):
         # default parameter testing
         # self.agn = AGN(t0=self.trest[0], Mi=-23, M_BH=1e9 * M_sun, lam=self.wave, edd_ratio=0.1, rng=self.rng)
         print(f'hostparams:{hostparams}')
-        self.sed = {self.trest[0]: self._get_Flambda()}
-        # TODO: consider a case of repeated t, we usually have several t = 0
+        
+        # SED for the first time moment
+        sed = [self._get_Flambda()]
         for t in self.trest[1:]:
             self.agn.step(t)
-            self.sed[t] = self._get_Flambda()
+            sed.append(self._get_Flambda())
+        self.sed = np.stack(sed)
 
     def test_AGN_flux(self, trest):
-        self.trest = np.round(trest, self._trest_digits)
         self.agn = AGN(t0=self.trest[0], Mi=self.Mi, M_BH=self.M_BH * M_sun, lam=self.wave, edd_ratio=self.edd_ratio,
                        rng=self.rng)
 
@@ -431,8 +452,12 @@ class gensed_AGN(gensed_base):
         return wave_aa
 
     def fetchSED(self, trest, maxlam, external_id, new_event, hostparams):
-        trest = round(trest, self._trest_digits)
-        return self.sed[trest]
+        idx = search_nearest(self.trest, trest)
+        # Check if given time value is close enough to what we've found
+        # 1e-4 days is arbitrary small value
+        if abs(self.trest[idx] - trest) > 1e-4:
+            raise ValueError(f"trest = {trest:.6f} was not providen in prepEvent()")
+        return self.sed[idx]
 
     def fetchParNames(self):
         return ['M_BH', 'Mi']
