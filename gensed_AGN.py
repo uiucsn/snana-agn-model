@@ -1,3 +1,12 @@
+"""
+This is the model file for AGN object. We adopted damped random walk model.
+
+The model needs time series provided by SNANA. The black hole mass, eddington ratio, Mi, wavelength range, rng(random seed) are provided by the model.
+The model will return flux at provided wavelength at each time moment.
+
+You can run this model without SNANA by providing the model with a time series, black hole mass, Mi, eddington ratio, rng(random seed) in the main function
+"""
+
 import numpy as np
 import astropy
 from astropy import constants, units
@@ -473,6 +482,11 @@ def main():
         flux_firstWave.append(sed_list[i][61])  #wave[61] closest to 4770/(1+ 0.805899978) armstrong(corrected SDSS g band)
     #print(list(my(sed_list.sed.values())[0])
 
+    F_spectrum = mySED.sed_Fnu[10]
+    F_spectrum2 = mySED.sed_Fnu[20]
+
+    ax1.plot(mySED.wave, F_spectrum)
+    ax1.plot(mySED.wave, F_spectrum2)
 
     ax1.plot(trest*(1+0.805899978), flux_firstWave, 'g-')
     ax1.invert_yaxis()
